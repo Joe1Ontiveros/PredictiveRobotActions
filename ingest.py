@@ -1,4 +1,4 @@
-import opencv
+import cv2 as opencv
 import numpy as np
 import PIL as p
 import openai

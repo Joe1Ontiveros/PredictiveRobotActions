@@ -6,10 +6,11 @@ import numpy as np
 from cv_bridge import CvBridge
 import rospy 
 from sensor_msgs.msg import Image
-import json 
+import json
+import torch
 from dynamic_gestures.main_controller import MainController
 from dynamic_gestures.utils import Drawer, Event, targets
-import ingest as inl # script to take the gesture recongition output 
+#import ingest as inl # script to take the gesture recongition output 
 
 global topic 
 topic = '/hololens/camera/'
