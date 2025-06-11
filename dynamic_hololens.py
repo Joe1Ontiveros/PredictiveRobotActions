@@ -67,7 +67,7 @@ csv_path = "datasets/action_predict/Balanced_Gesture_Command_Dataset.csv"
 input_len = 3
 hidden_size = 128
 num_layers = 2
-num_classes = 23
+num_classes = 22
 
 gesture_vocab, action_vocab = build_vocab_from_csv(csv_path)
 lstm_model = LSTM(input_len, hidden_size, num_classes, num_layers)
