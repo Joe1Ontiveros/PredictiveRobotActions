@@ -61,6 +61,7 @@ topic = '/hololens/camera/'
 
 output_pub = None
 bridge = None
+args = None
 
 # Load LSTM model and vocabularies ONCE
 lstm_model_path = "trained_lstm_model.pth"
@@ -83,7 +84,7 @@ else:
 gesture_history = []
 
 def image_callback(msg):
-    global frame, output_pub, bridge, gesture_history
+    global frame, output_pub, bridge, gesture_history, args
     try:
         frame = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
     except Exception as e:
@@ -101,6 +102,7 @@ def image_callback(msg):
         for i in range(bboxes.shape[0]):
             box = bboxes[i, :]
             gesture = targets[labels[i]] if labels[i] is not None else "None"
+            print(f"[DEBUG] Recognized gesture: {gesture}")
             cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
             cv2.putText(
                 frame,
@@ -120,6 +122,7 @@ def image_callback(msg):
     predicted_action = "None"
     if len(gesture_history) == 3 and lstm_model is not None:
         predicted_action = predict_action(lstm_model, gesture_vocab, action_vocab, gesture_history)
+        print(f"[DEBUG] Predicted action for {gesture_history}: {predicted_action}")
         cv2.putText(
             frame,
             f"Predicted Action: {predicted_action}",
@@ -129,7 +132,6 @@ def image_callback(msg):
             (0, 255, 0),
             3,
         )
-        print(f"Predicted action for {gesture_history}: {predicted_action}")
 
     # Draw overlays and publish
     frame = drawer.draw(frame)
@@ -138,6 +140,13 @@ def image_callback(msg):
         output_pub.publish(output_msg)
     except CvBridgeError as e:
         rospy.logerr(f"CV Bridge Error: {e}")
+
+    # Show the outgoing feed in a window
+    cv2.imshow("Outgoing Feed", frame)
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord("q"):
+        print("[DEBUG] Exiting live feed window.")
+        rospy.signal_shutdown("User requested shutdown.")
 
 def ros_main():
     global output_pub, bridge, args
@@ -163,7 +172,9 @@ def ros_main():
     bridge = CvBridge()
 
     rospy.Subscriber("/hololens/camera/", Image, image_callback)
+    print("[DEBUG] ROS node started, waiting for images...")
     rospy.spin()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     ros_main()
