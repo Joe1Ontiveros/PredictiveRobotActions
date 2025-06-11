@@ -1,5 +1,5 @@
 # 300-Image-label setup
-
+ # sketch for IMAGE-BASED model, settled for predictive LTSM due to time constraints
 
 *Test the following*
 We will take a basic set of 100 manually labeled instances of gestures related to an action

@@ -1,169 +1,148 @@
 import argparse
 import time
-# run on LINUX with ROS 1 installed and setup
+import os
+import torch
+import pandas as pd
 import cv2
 import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
-import rospy 
-import json
-import torch
+import rospy
 from m2 import MainController
 from utils import Drawer, Event, targets
-#import ingest as inl # script to take the gesture recongition output 
 
-global topic 
+# --- LSTM Model and Utilities ---
+
+class LSTM(torch.nn.Module):
+    def __init__(self, input_len, hidden_size, num_class, num_layers):
+        super(LSTM, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = torch.nn.LSTM(input_len, hidden_size, num_layers, batch_first=True)
+        self.output_layer = torch.nn.Linear(hidden_size, num_class)
+
+    def forward(self, X):
+        device = X.device
+        hidden_states = torch.zeros(self.num_layers, X.size(0), self.hidden_size, device=device)
+        cell_states = torch.zeros(self.num_layers, X.size(0), self.hidden_size, device=device)
+        out, _ = self.lstm(X, (hidden_states, cell_states))
+        out = self.output_layer(out[:, -1, :])
+        return out
+
+def build_vocab_from_csv(csv_path):
+    df = pd.read_csv(csv_path)
+    gesture_cols = ['gesture_1', 'gesture_2', 'gesture_3']
+    gesture_set = set()
+    for col in gesture_cols:
+        gesture_set.update(df[col].unique())
+    gesture_vocab = {g: i for i, g in enumerate(sorted(gesture_set))}
+    action_vocab = list(pd.factorize(df['next_action'])[1])
+    return gesture_vocab, action_vocab
+
+def predict_action(model, gesture_vocab, action_vocab, gestures):
+    encoded = [gesture_vocab.get(g, -1) for g in gestures]
+    if -1 in encoded:
+        print("Unknown gesture in input:", gestures)
+        return "unknown"
+    X = torch.tensor(encoded, dtype=torch.float32).reshape(1, 1, 3)
+    model.eval()
+    with torch.no_grad():
+        if torch.cuda.is_available():
+            X = X.to("cuda")
+            model = model.to("cuda")
+        output = model(X)
+        pred_idx = output.argmax(dim=1).item()
+        pred_action = action_vocab[pred_idx]
+        return pred_action
+
+# ROS/HL2 setup
+global topic
 topic = '/hololens/camera/'
 
-# These will be initialized in ros_main()
 output_pub = None
 bridge = None
 
-def image_callback(msg): # get the feed from the HoloLens using ROS
-    global frame, output_pub, bridge
-    frame = CvBridge.imgmsg_to_cv2(msg,desired_encding='bgr8')
-    if frame == None:
-        rospy.logwarn('no active frame detected from topic {topic}...')
-        return None
-    
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+# Load LSTM model and vocabularies ONCE
+lstm_model_path = "trained_lstm_model.pth"
+csv_path = "datasets/action_predict/Balanced_Gesture_Command_Dataset.csv"
+input_len = 3
+hidden_size = 128
+num_layers = 2
+num_classes = 10
+
+gesture_vocab, action_vocab = build_vocab_from_csv(csv_path)
+lstm_model = LSTM(input_len, hidden_size, num_classes, num_layers)
+if os.path.exists(lstm_model_path):
+    lstm_model.load_state_dict(torch.load(lstm_model_path, map_location="cpu"))
+    lstm_model.eval()
+    print("Loaded trained LSTM model for action prediction.")
+else:
+    print("Warning: Trained LSTM model not found. Action prediction will not work.")
+    lstm_model = None
+
+gesture_history = []
+
+def image_callback(msg):
+    global frame, output_pub, bridge, gesture_history
+    try:
+        frame = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+    except Exception as e:
+        rospy.logwarn(f"CV Bridge error: {e}")
+        return
 
     controller = MainController(args.detector, args.classifier)
     drawer = Drawer()
     debug_mode = args.debug
-    while cap.isOpened():
-        ret, frame = cap.read()
-        frame = cv2.flip(frame, 1)
-        if ret:
-            start_time = time.time()
-            bboxes, ids, labels = controller(frame)
-            if debug_mode:
-                if bboxes is not None:
-                    bboxes = bboxes.astype(np.int32)
-                    for i in range(bboxes.shape[0]):
-                        box = bboxes[i, :]
-                        gesture = targets[labels[i]] if labels[i] is not None else "None"
-                        print(f"Recognized gesture: {gesture}")
-                        # main part ^< rest is for visualization on the GUI & HoloLens 2 
 
-                        cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
-                        cv2.putText(
-                            frame,
-                            f"ID {ids[i]} : {gesture}",
-                            (box[0], box[1] - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            (0, 0, 255),
-                            2,
-                        )
+    bboxes, ids, labels = controller(frame)
+    gesture = None
+    if bboxes is not None:
+        bboxes = bboxes.astype(np.int32)
+        for i in range(bboxes.shape[0]):
+            box = bboxes[i, :]
+            gesture = targets[labels[i]] if labels[i] is not None else "None"
+            cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
+            cv2.putText(
+                frame,
+                f"ID {ids[i]} : {gesture}",
+                (box[0], box[1] - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 0, 255),
+                2,
+            )
+            if gesture != "None":
+                gesture_history.append(gesture)
+                if len(gesture_history) > 3:
+                    gesture_history = gesture_history[-3:]
 
-                fps = 1.0 / (time.time() - start_time)
-                cv2.putText(frame, f"fps {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            if len(controller.tracks) > 0:
-                count_of_zoom = 0
-                thumb_boxes = []
-                for trk in controller.tracks:
-                    if trk["tracker"].time_since_update < 1:
-                        if len(trk['hands']):
-                            count_of_zoom += (trk['hands'][-1].gesture == 3)
+    # Predict action every time we have 3 gestures
+    predicted_action = "None"
+    if len(gesture_history) == 3 and lstm_model is not None:
+        predicted_action = predict_action(lstm_model, gesture_vocab, action_vocab, gesture_history)
+        cv2.putText(
+            frame,
+            f"Predicted Action: {predicted_action}",
+            (10, 70),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.2,
+            (0, 255, 0),
+            3,
+        )
+        print(f"Predicted action for {gesture_history}: {predicted_action}")
 
-                            thumb_boxes.append(trk['hands'][-1].bbox)
-                            if len(trk['hands']) > 3 and [trk['hands'][-1].gesture, trk['hands'][-2].gesture, trk['hands'][-3].gesture] == [23, 23, 23]:
-                                x, y, x2, y2 = map(int, trk['hands'][-1].bbox)
-                                x, y, x2, y2 = max(x, 0), max(y, 0), max(x2, 0), max(y2, 0)
-                                bbox_area = frame[y:y2, x:x2]
-                                blurred_bbox = cv2.GaussianBlur(bbox_area, (51, 51), 10)
-                                frame[y:y2, x:x2] = blurred_bbox
-
-                        if trk["hands"].action is not None:
-                            
-                            if Event.SWIPE_LEFT == trk["hands"].action or  Event.SWIPE_LEFT2 == trk["hands"].action or  Event.SWIPE_LEFT3 == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.SWIPE_RIGHT == trk["hands"].action or Event.SWIPE_RIGHT2 == trk["hands"].action or Event.SWIPE_RIGHT3 == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.SWIPE_UP == trk["hands"].action or Event.SWIPE_UP2 == trk["hands"].action or Event.SWIPE_UP3 == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.SWIPE_DOWN == trk["hands"].action or Event.SWIPE_DOWN2 == trk["hands"].action or Event.SWIPE_DOWN3 == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.DRAG == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                ...
-                            elif Event.DROP == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.FAST_SWIPE_DOWN == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.FAST_SWIPE_UP == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.ZOOM_IN == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.ZOOM_OUT == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.DOUBLE_TAP == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.DRAG2 == trk["hands"].action or Event.DRAG3 == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                ...
-                            elif Event.DROP2 == trk["hands"].action or Event.DROP3 == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.TAP == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.COUNTERCLOCK == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                            elif Event.CLOCKWISE == trk["hands"].action:
-                                drawer.set_action(trk["hands"].action)
-                                trk["hands"].action = None
-                                ...
-                                
-                if count_of_zoom == 2:
-                    drawer.draw_two_hands(frame, thumb_boxes)
-            if debug_mode:
-                frame = drawer.draw(frame)
-            cv2.imshow("frame", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-            # Publish processed image to ROS topic
-            try:
-                output_msg = bridge.cv2_to_imgmsg(frame, encoding="bgr8")
-                output_pub.publish(output_msg)
-            except CvBridgeError as e:
-                rospy.logerr(f"CV Bridge Error: {e}")
-            # inl.callback_ModelOut(gesture) 
-            # inl.callback_hololensOut(gesture)
-            # rospy.log("called hololens and model output succesfully...")
+    # Draw overlays and publish
+    frame = drawer.draw(frame)
+    try:
+        output_msg = bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+        output_pub.publish(output_msg)
+    except CvBridgeError as e:
+        rospy.logerr(f"CV Bridge Error: {e}")
 
 def ros_main():
-    global controller,drawer,debug_mode, output_pub, bridge, args
+    global output_pub, bridge, args
     rospy.init_node("gesture_recog_HL2")
     parser = argparse.ArgumentParser(description="Run demo")
-    # rospy.Subscriber(topic,Image,image_callback)
     parser.add_argument(
         "--detector",
         default='models/hand_detector.onnx',
@@ -179,19 +158,12 @@ def ros_main():
     parser.add_argument("--debug", required=False, action="store_true", help="Debug mode")
     args = parser.parse_args()
 
-    controller = MainController(args.detector, args.classifier)
-    drawer = Drawer()
-    debug_mode = args.debug
-
-    # Add publisher and bridge initialization
     output_pub = rospy.Publisher('/hololens/processed_image', Image, queue_size=1)
+    global bridge
     bridge = CvBridge()
 
     rospy.Subscriber("/hololens/camera/", Image, image_callback)
     rospy.spin()
 
 if __name__ == "__main__":
-    # Parse command line arguments
-    # start the ros image subscriber first : 
-
     ros_main()
