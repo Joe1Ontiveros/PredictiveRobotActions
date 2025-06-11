@@ -171,7 +171,7 @@ def ros_main():
     global bridge
     bridge = CvBridge()
 
-    rospy.Subscriber("/hololens/camera/", Image, image_callback)
+    rospy.Subscriber("/hololens/ab_image/", Image, image_callback)
     print("[DEBUG] ROS node started, waiting for images...")
     rospy.spin()
     cv2.destroyAllWindows()
