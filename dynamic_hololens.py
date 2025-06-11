@@ -62,7 +62,7 @@ bridge = None
 args = None
 
 # Load LSTM model and vocabularies ONCE
-lstm_model_path = "trained_lstm_model.pth"
+lstm_model_path = "trained_lstm_model_ALL.pth"
 csv_path = "datasets/action_predict/Balanced_Gesture_Command_Dataset.csv"
 input_len = 3
 hidden_size = 128
