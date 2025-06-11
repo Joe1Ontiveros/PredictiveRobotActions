@@ -1,5 +1,4 @@
 import argparse
-import time
 import os
 import torch
 import pandas as pd
@@ -8,7 +7,7 @@ import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
 import rospy
-from m2 import MainController
+from dynamic_gestures import MainController
 from utils import Drawer, Event, targets
 
 # --- LSTM Model and Utilities ---
@@ -56,8 +55,7 @@ def predict_action(model, gesture_vocab, action_vocab, gestures):
         return pred_action
 
 # ROS/HL2 setup
-global topic
-topic = '/hololens/camera/'
+topic = '/hololens/ab_image/'
 
 output_pub = None
 bridge = None
@@ -84,7 +82,7 @@ else:
 gesture_history = []
 
 def image_callback(msg):
-    global frame, output_pub, bridge, gesture_history, args
+    global output_pub, bridge, gesture_history, args
     try:
         frame = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
     except Exception as e:
@@ -96,12 +94,13 @@ def image_callback(msg):
     debug_mode = args.debug
 
     bboxes, ids, labels = controller(frame)
-    gesture = None
+    detected_gestures = []
     if bboxes is not None:
         bboxes = bboxes.astype(np.int32)
         for i in range(bboxes.shape[0]):
             box = bboxes[i, :]
             gesture = targets[labels[i]] if labels[i] is not None else "None"
+            detected_gestures.append(gesture)
             print(f"[DEBUG] Recognized gesture: {gesture}")
             cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
             cv2.putText(
@@ -122,16 +121,22 @@ def image_callback(msg):
     predicted_action = "None"
     if len(gesture_history) == 3 and lstm_model is not None:
         predicted_action = predict_action(lstm_model, gesture_vocab, action_vocab, gesture_history)
-        print(f"[DEBUG] Predicted action for {gesture_history}: {predicted_action}")
-        cv2.putText(
-            frame,
-            f"Predicted Action: {predicted_action}",
-            (10, 70),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.2,
-            (0, 255, 0),
-            3,
-        )
+        print(f"(CURRENT GESTURE SET {gesture_history}, PREDICTED_ACTION: {predicted_action})")
+    else:
+        print(f"(CURRENT GESTURE SET {gesture_history}, PREDICTED_ACTION: None)")
+
+    # Show both detected gestures and predicted action in the output visual
+    display_gestures = ', '.join(detected_gestures) if detected_gestures else "None"
+    display_text = f"Gestures: [{display_gestures}] | Predicted: {predicted_action}"
+    cv2.putText(
+        frame,
+        display_text,
+        (10, 70),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.0,
+        (0, 255, 0),
+        3,
+    )
 
     # Draw overlays and publish
     frame = drawer.draw(frame)
@@ -166,12 +171,10 @@ def ros_main():
     )
     parser.add_argument("--debug", required=False, action="store_true", help="Debug mode")
     args = parser.parse_args()
-
     output_pub = rospy.Publisher('/hololens/processed_image', Image, queue_size=1)
     global bridge
     bridge = CvBridge()
-
-    rospy.Subscriber("/hololens/ab_image/", Image, image_callback)
+    rospy.Subscriber(topic, Image, image_callback)
     print("[DEBUG] ROS node started, waiting for images...")
     rospy.spin()
     cv2.destroyAllWindows()
