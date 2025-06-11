@@ -63,7 +63,7 @@ args = None
 
 # Load LSTM model and vocabularies ONCE
 lstm_model_path = "trained_lstm_model_ALL.pth"
-csv_path = "datasets/action_predict/Balanced_Gesture_Command_Dataset.csv"
+csv_path = "datasets/action_predict/DDR2.csv"
 
 # Dynamically determine num_classes from the CSV to match training
 df = pd.read_csv(csv_path)
