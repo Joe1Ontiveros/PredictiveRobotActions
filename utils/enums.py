@@ -67,6 +67,8 @@ class Event(Enum):
     DRAG3 = 21
     DROP3 = 22
     TAP = 23
+    COUNTERCLOCKWISE = 30  # new for model
+    CLOCKWISE = 31
 
 
 targets = [

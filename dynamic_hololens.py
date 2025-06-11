@@ -8,8 +8,8 @@ import rospy
 from sensor_msgs.msg import Image
 import json
 import torch
-from dynamic_gestures.main_controller import MainController
-from dynamic_gestures.utils import Drawer, Event, targets
+from m2 import MainController
+from utils import Drawer, Event, targets
 #import ingest as inl # script to take the gesture recongition output 
 
 global topic 
@@ -174,6 +174,7 @@ def ros_main():
 
     rospy.Subscriber("/hololens/camera/", Image, image_callback)
     rospy.spin()
+
 if __name__ == "__main__":
     # Parse command line arguments
     # start the ros image subscriber first : 

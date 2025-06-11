@@ -3,8 +3,8 @@ import time
 
 import cv2
 import numpy as np
-
 from m2 import MainController
+# from maincontroller import MainController
 from utils import Drawer, Event, targets
 
 
@@ -15,20 +15,23 @@ def run(args):
 
     controller = MainController(args.detector, args.classifier)
     drawer = Drawer()
-    debug_mode = args.debug
+    # debug_mode = args.debug
+    debug_mode=True
+    print("Starting gesture recognition demo...")
     while cap.isOpened():
         ret, frame = cap.read()
         frame = cv2.flip(frame, 1)
         if ret:
             start_time = time.time()
             bboxes, ids, labels = controller(frame)
+            gesture = None
             if debug_mode:
                 if bboxes is not None:
                     bboxes = bboxes.astype(np.int32)
                     for i in range(bboxes.shape[0]):
                         box = bboxes[i, :]
                         gesture = targets[labels[i]] if labels[i] is not None else "None"
-                        
+                        print(f"Recognized gesture: {gesture}")
                         cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (255, 255, 0), 4)
                         cv2.putText(
                             frame,
@@ -49,7 +52,6 @@ def run(args):
                     if trk["tracker"].time_since_update < 1:
                         if len(trk['hands']):
                             count_of_zoom += (trk['hands'][-1].gesture == 3)
-
                             thumb_boxes.append(trk['hands'][-1].bbox)
                             if len(trk['hands']) > 3 and [trk['hands'][-1].gesture, trk['hands'][-2].gesture, trk['hands'][-3].gesture] == [23, 23, 23]:
                                 x, y, x2, y2 = map(int, trk['hands'][-1].bbox)
@@ -59,77 +61,65 @@ def run(args):
                                 frame[y:y2, x:x2] = blurred_bbox
 
                         if trk["hands"].action is not None:
+                            print(f"Action detected: {trk['hands'].action}")
                             if Event.SWIPE_LEFT == trk["hands"].action or  Event.SWIPE_LEFT2 == trk["hands"].action or  Event.SWIPE_LEFT3 == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.SWIPE_RIGHT == trk["hands"].action or Event.SWIPE_RIGHT2 == trk["hands"].action or Event.SWIPE_RIGHT3 == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.SWIPE_UP == trk["hands"].action or Event.SWIPE_UP2 == trk["hands"].action or Event.SWIPE_UP3 == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.SWIPE_DOWN == trk["hands"].action or Event.SWIPE_DOWN2 == trk["hands"].action or Event.SWIPE_DOWN3 == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.DRAG == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
-                                ...
                             elif Event.DROP == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.FAST_SWIPE_DOWN == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.FAST_SWIPE_UP == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.ZOOM_IN == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.ZOOM_OUT == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.DOUBLE_TAP == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.DRAG2 == trk["hands"].action or Event.DRAG3 == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
-                                ...
                             elif Event.DROP2 == trk["hands"].action or Event.DROP3 == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
                             elif Event.TAP == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
-                            elif Event.COUNTERCLOCK == trk["hands"].action:
+                            elif hasattr(Event, "COUNTERCLOCKWISE") and Event.COUNTERCLOCKWISE == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
-                            elif Event.CLOCKWISE == trk["hands"].action:
+                            elif hasattr(Event, "CLOCKWISE") and Event.CLOCKWISE == trk["hands"].action:
                                 drawer.set_action(trk["hands"].action)
                                 trk["hands"].action = None
-                                ...
-                                
+
                 if count_of_zoom == 2:
                     drawer.draw_two_hands(frame, thumb_boxes)
             if debug_mode:
                 frame = drawer.draw(frame)
-            cv2.imshow("frame", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-
+        # Always show the frame and process key events
+        cv2.imshow("Gesture Recognition", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            print("Exiting demo.")
+            break
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     # Parse command line arguments
