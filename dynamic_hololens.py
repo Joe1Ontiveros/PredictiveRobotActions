@@ -3,9 +3,9 @@ import time
 # run on LINUX with ROS 1 installed and setup
 import cv2
 import numpy as np
-from cv_bridge import CvBridge
-import rospy 
+from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
+import rospy 
 import json
 import torch
 from m2 import MainController
@@ -15,8 +15,12 @@ from utils import Drawer, Event, targets
 global topic 
 topic = '/hololens/camera/'
 
+# These will be initialized in ros_main()
+output_pub = None
+bridge = None
+
 def image_callback(msg): # get the feed from the HoloLens using ROS
-    global frame 
+    global frame, output_pub, bridge
     frame = CvBridge.imgmsg_to_cv2(msg,desired_encding='bgr8')
     if frame == None:
         rospy.logwarn('no active frame detected from topic {topic}...')
@@ -145,11 +149,18 @@ def image_callback(msg): # get the feed from the HoloLens using ROS
             cv2.imshow("frame", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
-            inl.callback_ModelOut(gesture) 
-            inl.callback_hololensOut(gesture)
-            rospy.log("called hololens and model output succesfully...")
+            # Publish processed image to ROS topic
+            try:
+                output_msg = bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+                output_pub.publish(output_msg)
+            except CvBridgeError as e:
+                rospy.logerr(f"CV Bridge Error: {e}")
+            # inl.callback_ModelOut(gesture) 
+            # inl.callback_hololensOut(gesture)
+            # rospy.log("called hololens and model output succesfully...")
+
 def ros_main():
-    global controller,drawer,debug_mode
+    global controller,drawer,debug_mode, output_pub, bridge, args
     rospy.init_node("gesture_recog_HL2")
     parser = argparse.ArgumentParser(description="Run demo")
     # rospy.Subscriber(topic,Image,image_callback)
@@ -171,6 +182,10 @@ def ros_main():
     controller = MainController(args.detector, args.classifier)
     drawer = Drawer()
     debug_mode = args.debug
+
+    # Add publisher and bridge initialization
+    output_pub = rospy.Publisher('/hololens/processed_image', Image, queue_size=1)
+    bridge = CvBridge()
 
     rospy.Subscriber("/hololens/camera/", Image, image_callback)
     rospy.spin()
