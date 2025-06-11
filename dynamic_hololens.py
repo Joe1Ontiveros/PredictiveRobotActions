@@ -166,13 +166,13 @@ def ros_main():
     # rospy.Subscriber(topic,Image,image_callback)
     parser.add_argument(
         "--detector",
-        default='dynamic_gestures/models/hand_detector.onnx',
+        default='models/hand_detector.onnx',
         type=str,
         help="Path to detector onnx model"
     )
     parser.add_argument(
         "--classifier",
-        default='dynamic_gestures/models/crops_classifier.onnx',
+        default='models/crops_classifier.onnx',
         type=str,
         help="Path to classifier onnx model",
     )
