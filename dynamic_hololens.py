@@ -7,7 +7,7 @@ import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
 import rospy
-from m2 import MainController
+from maincontroller import MainController
 from utils import Drawer, Event, targets
 
 # --- LSTM Model and Utilities ---
