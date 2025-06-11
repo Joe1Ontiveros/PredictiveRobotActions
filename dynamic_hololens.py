@@ -184,3 +184,7 @@ def ros_main():
 
 if __name__ == "__main__":
     ros_main()
+    
+    
+    # current issues, cannot read gestures thus cannot feed to model, but we are succesfully capturing hololens and overlaying the feed 
+    # fix that and then we are good to submit 
