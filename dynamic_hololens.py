@@ -7,7 +7,7 @@ import numpy as np
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
 import rospy
-from maincontroller import MainController
+from m2 import MainController  # <-- Use m2.MainController for parity with your working demo
 from utils import Drawer, Event, targets
 
 # --- LSTM Model and Utilities ---
@@ -93,9 +93,10 @@ def image_callback(msg):
     drawer = Drawer()
     debug_mode = args.debug
 
+    # --- FIX: Use controller as in your working OpenCV demo ---
     bboxes, ids, labels = controller(frame)
     detected_gestures = []
-    if bboxes is not None:
+    if bboxes is not None and labels is not None:
         bboxes = bboxes.astype(np.int32)
         for i in range(bboxes.shape[0]):
             box = bboxes[i, :]
@@ -116,6 +117,8 @@ def image_callback(msg):
                 gesture_history.append(gesture)
                 if len(gesture_history) > 3:
                     gesture_history = gesture_history[-3:]
+    else:
+        print("[DEBUG] No gestures detected in this frame.")
 
     # Predict action every time we have 3 gestures
     predicted_action = "None"
