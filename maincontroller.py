@@ -1,6 +1,5 @@
 import numpy as np
-
-from dynamic_gestures.ocsort import (
+from ocsort import (
     KalmanBoxTracker,
     associate,
     ciou_batch,
@@ -10,8 +9,8 @@ from dynamic_gestures.ocsort import (
     iou_batch,
     linear_assignment,
 )
-from dynamic_gestures.onnx_models import HandClassification, HandDetection
-from dynamic_gestures.utils import Deque, Drawer, Hand
+from onnx_models import HandClassification, HandDetection
+from utils import Deque, Drawer, Hand
 
 
 # YOLO multi-model:
