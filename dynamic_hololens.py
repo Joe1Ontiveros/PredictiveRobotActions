@@ -64,10 +64,18 @@ args = None
 # Load LSTM model and vocabularies ONCE
 lstm_model_path = "trained_lstm_model_ALL.pth"
 csv_path = "datasets/action_predict/Balanced_Gesture_Command_Dataset.csv"
+
+# Dynamically determine num_classes from the CSV to match training
+df = pd.read_csv(csv_path)
+if df.shape[1] == 4:
+    df.columns = ['gesture_1', 'gesture_2', 'gesture_3', 'next_action']
+    num_classes = df['next_action'].nunique()
+else:
+    raise ValueError("CSV must have 4 columns (3 gestures + 1 action/command)")
+
 input_len = 3
-hidden_size = 128
+hidden_size = 256  # <-- match your training parameter!
 num_layers = 2
-num_classes = 22
 
 gesture_vocab, action_vocab = build_vocab_from_csv(csv_path)
 lstm_model = LSTM(input_len, hidden_size, num_classes, num_layers)
@@ -80,7 +88,6 @@ else:
     lstm_model = None
 
 gesture_history = []
-
 def image_callback(msg):
     global output_pub, bridge, gesture_history, args
     try:
